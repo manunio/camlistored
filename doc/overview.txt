@@ -1,0 +1,19 @@
+=================================================================
+Camlistore: Content-Addressable Multi-Layer, Indexed Store
+=================================================================
+
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+Design goals:
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+* Content storage & indexing & backup system
+* No master node
+* Anything can sync any which way, in any directed graph (cycles or not)
+  (phone -> personal server <-> home machine <-> amazon <-> google, etc)
+* No sync state or races on argument of latest versions
+* Future-proof
+* Very obvious/intutive schema (easy to recover in the future, even
+  if all the docs/notes about Camlistore are lost, or the recoverer in
+  five decades after I die doesn't even know that Camlistore was being
+  used...) should be easy for future digital archealogista to grok.
+
