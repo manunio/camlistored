@@ -18,7 +18,7 @@ var storageRoot *string = flag.String("root", "/tmp/camliroot", "Root directory 
 
 var sharedSecret string
 
-var putPattern *regexp.Regexp = regexp.MustCompile(`^camli/{sha1}-{[a-f0-9]+}$`)
+var putPattern *regexp.Regexp = regexp.MustCompile(`^/camli/(sha1)-([a-f0-9]+)$`)
 
 func badRequestError(conn http.ResponseWriter, errorMessage string) {
 	conn.WriteHeader(http.StatusBadRequest)
@@ -39,15 +39,16 @@ func handleCamli(conn http.ResponseWriter, req *http.Request) {
 }
 
 func handlePut(conn http.ResponseWriter, req *http.Request) {
-	groups := putPattern.FindAllString(req.URL.Path, -1)
-	if len(groups) != 3 {
+	groups := putPattern.FindAllStringSubmatch(req.URL.Path, -1)
+	fmt.Println(groups)
+	if len(groups[0]) == 1 && len(groups[0]) != 3 {
 		badRequestError(conn, "Malformed PUT URL.")
 		fmt.Println("PUT URL: ", req.URL.Path)
 		return
 	}
 
-	hashFunc := groups[1]
-	digest := groups[2]
+	hashFunc := groups[0][1]
+	digest := groups[0][2]
 
 	if hashFunc == "sha1" && len(digest) != 40 {
 		badRequestError(conn, "invalid length for sha1 hash")
