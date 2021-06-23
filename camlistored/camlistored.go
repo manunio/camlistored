@@ -35,7 +35,6 @@ func handleCamli(conn http.ResponseWriter, req *http.Request) {
 		handlePut(conn, req)
 		return
 	}
-
 	badRequestError(conn, "unsupported method.")
 }
 
