@@ -41,7 +41,7 @@ func handleCamli(conn http.ResponseWriter, req *http.Request) {
 func handlePut(conn http.ResponseWriter, req *http.Request) {
 	groups := putPattern.FindAllStringSubmatch(req.URL.Path, -1)
 	fmt.Println(groups)
-	if len(groups[0]) == 1 && len(groups[0]) != 3 {
+	if len(groups) == 0 || len(groups[0]) != 3 {
 		badRequestError(conn, "Malformed PUT URL.")
 		fmt.Println("PUT URL: ", req.URL.Path)
 		return
