@@ -2,6 +2,7 @@ package main
 
 import (
 	"crypto/sha1"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -19,11 +20,28 @@ var storageRoot *string = flag.String("root", "/tmp/camliroot", "Root directory 
 var sharedSecret string
 
 var getPutPattern *regexp.Regexp = regexp.MustCompile(`^/camli/(sha1)-([a-f0-9]+)$`)
+var basicAuthPattern *regexp.Regexp = regexp.MustCompile(`^Basic ([a-zA-Z0-9\+/=]+)`)
 
 // ObjectRef ...
 type ObjectRef struct {
 	hashName string
 	digest   string
+}
+
+func putAllowed(req *http.Request) bool {
+	auth := req.Header.Get("Authorization")
+	if auth == "" {
+		return false
+	}
+	matches := basicAuthPattern.FindAllStringSubmatch(auth, -1)
+	if len(matches) != 1 || len(matches[0]) != 2 {
+		return false
+	}
+	var outBuf []byte = make([]byte, base64.StdEncoding.DecodedLen(len(matches[0][1])))
+	bytes, err := base64.StdEncoding.Decode(outBuf, []uint8(matches[0][1]))
+	fmt.Println("Decode bytes:", bytes, " error: ", err)
+	fmt.Println("Got userPass:", string(outBuf))
+	return false
 }
 
 // ParsePath ...
@@ -166,6 +184,13 @@ func handlePut(conn http.ResponseWriter, req *http.Request) {
 		return
 	}
 
+	if !putAllowed(req) {
+		conn.Header().Set("WWW-Authentication", "Basic realm=\"camlistored\"")
+		conn.WriteHeader(http.StatusUnauthorized)
+		fmt.Fprint(conn, "Authentication required.")
+		return
+
+	}
 	// TODO(manunio): auth/authz checks here
 
 	hashedDirectory := objRef.DirectoryName()
