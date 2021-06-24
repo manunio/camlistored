@@ -21,6 +21,17 @@ var putPassword string
 
 var getPutPattern *regexp.Regexp = regexp.MustCompile(`^/camli/(sha1)-([a-f0-9]+)$`)
 var basicAuthPattern *regexp.Regexp = regexp.MustCompile(`^Basic ([a-zA-Z0-9\+/=]+)`)
+var multipartContentPattern *regexp.Regexp = regexp.MustCompile(`^multipart/form-data; boudary="?([^" ]+)"?`)
+
+type MultiPartReader struct {
+	boundary string
+	reader   io.Reader
+}
+
+type MultiPartBodyPart struct {
+	Header map[string]string
+	Body   io.Reader
+}
 
 // BlobRef ...
 type BlobRef struct {
@@ -91,15 +102,21 @@ func (o *BlobRef) FileName() string {
 
 func badRequestError(conn http.ResponseWriter, errorMessage string) {
 	conn.WriteHeader(http.StatusBadRequest)
-	fmt.Fprintf(conn, "%s\n", errorMessage)
+	_, _ = fmt.Fprintf(conn, "%s\n", errorMessage)
 }
 
 func serverError(conn http.ResponseWriter, err error) {
 	conn.WriteHeader(http.StatusInternalServerError)
-	fmt.Fprintf(conn, "Server error: %s\n", err)
+	_, _ = fmt.Fprintf(conn, "Server error: %s\n", err)
 }
 
 func handleCamli(conn http.ResponseWriter, req *http.Request) {
+
+	if req.Method == "POST" && req.URL.Path == "/camli/upload" {
+		handleMultiPartUpload(conn, req)
+		return
+	}
+
 	if req.Method == "PUT" {
 		handlePut(conn, req)
 		return
@@ -113,6 +130,26 @@ func handleCamli(conn http.ResponseWriter, req *http.Request) {
 	badRequestError(conn, "unsupported method.")
 }
 
+func handleMultiPartUpload(conn http.ResponseWriter, req *http.Request) {
+	if !(req.Method == "POST" && req.URL.Path == "/camli/upload") {
+		badRequestError(conn, "Inconfigured handler.")
+	}
+	contentType := req.Header.Get("Content-Type")
+	groups := multipartContentPattern.FindAllStringSubmatch(contentType, -1)
+	if len(groups) != 1 || len(groups[0]) != 2 {
+		badRequestError(conn, "Expected multipart/form-data Content-Type")
+		return
+	}
+
+	boundary := groups[0][1]
+	bodyReader := &MultiPartReader{boundary, req.Body}
+	fmt.Println("body: ", bodyReader)
+	if _, err := io.Copy(os.Stdout, req.Body); err != nil {
+		serverError(conn, err)
+	}
+	fmt.Println(conn, "test")
+}
+
 func handleGet(conn http.ResponseWriter, req *http.Request) {
 	objRef := ParsePath(req.URL.Path)
 	if objRef == nil {
@@ -123,7 +160,7 @@ func handleGet(conn http.ResponseWriter, req *http.Request) {
 	stat, err := os.Stat(fileName)
 	if os.IsNotExist(err) {
 		conn.WriteHeader(http.StatusNotFound)
-		fmt.Fprintf(conn, "Object not found")
+		_, _ = fmt.Fprintf(conn, "Object not found")
 		return
 	}
 	if err != nil {
@@ -143,29 +180,33 @@ func handleGet(conn http.ResponseWriter, req *http.Request) {
 	// to verify Digest doesn't match. But we close the (chunked) response anyway,
 	// to further signal errors.
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error sending file: %v err=%v\n", objRef, err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error sending file: %v err=%v\n", objRef, err)
 		hj, ok := conn.(http.Hijacker)
 		if !ok {
-			serverError(conn, errors.New("webserver doesn't support hijacking"))
+			serverError(conn, errors.New("web server doesn't support hijacking"))
 			return
 		}
 		closer, _, err := hj.Hijack()
 		if err != nil {
-			closer.Close()
+			if closer != nil {
+				_ = closer.Close()
+			}
 		}
 		return
 	}
 
 	if bytesCopied != stat.Size() {
-		fmt.Fprintf(os.Stderr, "Error sending file: %v, copied= %d, not %v\n", objRef, bytesCopied, stat.Size())
+		_, _ = fmt.Fprintf(os.Stderr, "Error sending file: %v, copied= %d, not %v\n", objRef, bytesCopied, stat.Size())
 		hj, ok := conn.(http.Hijacker)
 		if !ok {
-			serverError(conn, errors.New("webserver doesn't support hijacking"))
+			serverError(conn, errors.New("web server doesn't support hijacking"))
 			return
 		}
 		closer, _, err := hj.Hijack()
 		if err != nil {
-			closer.Close()
+			if closer != nil {
+				_ = closer.Close()
+			}
 		}
 		return
 
@@ -188,7 +229,7 @@ func handlePut(conn http.ResponseWriter, req *http.Request) {
 	if !putAllowed(req) {
 		conn.Header().Set("WWW-Authentication", "Basic realm=\"camlistored\"")
 		conn.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprint(conn, "Authentication required.")
+		_, _ = fmt.Fprint(conn, "Authentication required.")
 		return
 
 	}
@@ -213,7 +254,7 @@ func handlePut(conn http.ResponseWriter, req *http.Request) {
 	defer func() {
 		if !success {
 			fmt.Println("Removing temp file: ", tempFile.Name())
-			os.Remove(tempFile.Name())
+			_ = os.Remove(tempFile.Name())
 		}
 	}()
 
@@ -259,12 +300,12 @@ func handlePut(conn http.ResponseWriter, req *http.Request) {
 		// we can clean it up later in GC phase.
 	}
 	success = true
-	fmt.Fprintf(conn, "OK")
+	_, _ = fmt.Fprintf(conn, "OK")
 }
 
 // HandleRoot func
 func HandleRoot(conn http.ResponseWriter, req *http.Request) {
-	fmt.Fprintf(conn, `This is camlistored, a Camlistore storage daemon`)
+	_, _ = fmt.Fprintf(conn, `This is camlistored, a Camlistore storage daemon`)
 }
 
 func main() {
@@ -272,13 +313,13 @@ func main() {
 
 	putPassword = os.Getenv("CAMLI_PASSWORD")
 	if len(putPassword) == 0 {
-		fmt.Fprintf(os.Stderr, "No CAMLI_PASSWORD environment variable set. \n")
+		_, _ = fmt.Fprintf(os.Stderr, "No CAMLI_PASSWORD environment variable set. \n")
 		os.Exit(1)
 	}
 	{
 		fi, err := os.Stat(*storageRoot)
 		if err != nil || !fi.IsDir() {
-			fmt.Fprintf(os.Stderr, "Storage root '%s' doesn't exist", *storageRoot)
+			_, _ = fmt.Fprintf(os.Stderr, "Storage root '%s' doesn't exist", *storageRoot)
 			os.Exit(1)
 		}
 
@@ -290,7 +331,7 @@ func main() {
 
 	fmt.Printf("Starting to listen on http://%v\n", *listen)
 	if err := http.ListenAndServe(*listen, mux); err != nil {
-		fmt.Fprintf(os.Stderr, "Error in http server: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "Error in http server: %v\n", err)
 		os.Exit(1)
 	}
 }

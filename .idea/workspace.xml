@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="BranchesTreeState">
+    <expand>
+      <path>
+        <item name="ROOT" type="e8cecc67:BranchNodeDescriptor" />
+        <item name="LOCAL_ROOT" type="e8cecc67:BranchNodeDescriptor" />
+      </path>
+      <path>
+        <item name="ROOT" type="e8cecc67:BranchNodeDescriptor" />
+        <item name="REMOTE_ROOT" type="e8cecc67:BranchNodeDescriptor" />
+      </path>
+      <path>
+        <item name="ROOT" type="e8cecc67:BranchNodeDescriptor" />
+        <item name="REMOTE_ROOT" type="e8cecc67:BranchNodeDescriptor" />
+        <item name="GROUP_NODE:origin" type="e8cecc67:BranchNodeDescriptor" />
+      </path>
+    </expand>
+    <select />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="6a5d1ce7-c548-42b6-8490-3f405379e927" name="Default Changelist" comment="">
+      <change afterPath="$PROJECT_DIR$/.idea/dictionaries/maxx.xml" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/blobserver/appengine/.gitignore" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/blobserver/appengine/config.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/blobserver/appengine/main.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/blobserver/appengine/test_data.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/blobserver/go/camlistored.go" beforeDir="false" afterPath="$PROJECT_DIR$/blobserver/go/camlistored.go" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="GOROOT" path="/usr/local/go" />
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="MavenImportPreferences">
+    <option name="generalSettings">
+      <MavenGeneralSettings>
+        <option name="mavenHome" value="$APPLICATION_HOME_DIR$/plugins/maven/lib/maven3" />
+      </MavenGeneralSettings>
+    </option>
+  </component>
+  <component name="ProjectId" id="1uK5D8MftTTMz78qXiXvZwE38N3" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">
+    <property name="RunOnceActivity.OpenProjectViewOnStart" value="true" />
+    <property name="RunOnceActivity.ShowReadmeOnStart" value="true" />
+    <property name="SHARE_PROJECT_CONFIGURATION_FILES" value="true" />
+    <property name="WebServerToolWindowFactoryState" value="false" />
+    <property name="aspect.path.notification.shown" value="true" />
+    <property name="go.import.settings.migrated" value="true" />
+    <property name="last_opened_file_path" value="$PROJECT_DIR$" />
+    <property name="project.structure.last.edited" value="SDKs" />
+    <property name="project.structure.proportion" value="0.0" />
+    <property name="project.structure.side.proportion" value="0.0" />
+    <property name="settings.editor.selected.configurable" value="preferences.lookFeel" />
+  </component>
+  <component name="RubyModuleManagerSettings">
+    <option name="blackListedRootsPaths">
+      <list>
+        <option value="$PROJECT_DIR$" />
+      </list>
+    </option>
+  </component>
+  <component name="SvnConfiguration">
+    <configuration />
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="6a5d1ce7-c548-42b6-8490-3f405379e927" name="Default Changelist" comment="" />
+      <created>1624401317841</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1624401317841</updated>
+      <workItem from="1624401319156" duration="137000" />
+      <workItem from="1624521952878" duration="1669000" />
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="2" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="WindowStateProjectService">
+    <state x="753" y="433" key="#GOROOT" timestamp="1624401328077">
+      <screen x="0" y="0" width="1920" height="1080" />
+    </state>
+    <state x="753" y="433" key="#GOROOT/0.0.1920.1080@0.0.1920.1080" timestamp="1624401328077" />
+    <state width="498" height="453" key="SwitcherDM" timestamp="1624522841467">
+      <screen x="0" y="0" width="1920" height="1080" />
+    </state>
+    <state width="498" height="453" key="SwitcherDM/0.0.1920.1080@0.0.1920.1080" timestamp="1624522841467" />
+    <state x="483" y="181" width="944" height="641" key="com.intellij.openapi.editor.actions.MultiplePasteAction$ClipboardContentChooser" timestamp="1624523047505">
+      <screen x="0" y="0" width="1920" height="1080" />
+    </state>
+    <state x="483" y="181" width="944" height="641" key="com.intellij.openapi.editor.actions.MultiplePasteAction$ClipboardContentChooser/0.0.1920.1080@0.0.1920.1080" timestamp="1624523047505" />
+    <state x="621" y="233" width="675" height="678" key="search.everywhere.popup" timestamp="1624522119699">
+      <screen x="0" y="0" width="1920" height="1080" />
+    </state>
+    <state x="621" y="233" width="675" height="678" key="search.everywhere.popup/0.0.1920.1080@0.0.1920.1080" timestamp="1624522119699" />
+  </component>
+</project>
