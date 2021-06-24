@@ -17,7 +17,7 @@ import (
 var listen *string = flag.String("listen", "0.0.0.0:3179", "host:port to listen on")
 var storageRoot *string = flag.String("root", "/tmp/camliroot", "Root directory to store files")
 
-var sharedSecret string
+var putPassword string
 
 var getPutPattern *regexp.Regexp = regexp.MustCompile(`^/camli/(sha1)-([a-f0-9]+)$`)
 var basicAuthPattern *regexp.Regexp = regexp.MustCompile(`^Basic ([a-zA-Z0-9\+/=]+)`)
@@ -39,9 +39,13 @@ func putAllowed(req *http.Request) bool {
 	}
 	var outBuf []byte = make([]byte, base64.StdEncoding.DecodedLen(len(matches[0][1])))
 	bytes, err := base64.StdEncoding.Decode(outBuf, []uint8(matches[0][1]))
+	if err != nil {
+		return false
+	}
+	password := string(outBuf)
 	fmt.Println("Decode bytes:", bytes, " error: ", err)
-	fmt.Println("Got userPass:", string(outBuf))
-	return false
+	fmt.Println("Got userPass:", password)
+	return password != "" && password == putPassword
 }
 
 // ParsePath ...
@@ -59,10 +63,7 @@ func ParsePath(path string) *BlobRef {
 
 // IsSupported ...
 func (o *BlobRef) IsSupported() bool {
-	if o.HashName == "sha1" {
-		return true
-	}
-	return false
+	return o.HashName == "sha1"
 }
 
 // Hash ...
@@ -269,8 +270,8 @@ func HandleRoot(conn http.ResponseWriter, req *http.Request) {
 func main() {
 	flag.Parse()
 
-	sharedSecret = os.Getenv("CAMLI_PASSWORD")
-	if len(sharedSecret) == 0 {
+	putPassword = os.Getenv("CAMLI_PASSWORD")
+	if len(putPassword) == 0 {
 		fmt.Fprintf(os.Stderr, "No CAMLI_PASSWORD environment variable set. \n")
 		os.Exit(1)
 	}
