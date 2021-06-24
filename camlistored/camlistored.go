@@ -22,10 +22,10 @@ var sharedSecret string
 var getPutPattern *regexp.Regexp = regexp.MustCompile(`^/camli/(sha1)-([a-f0-9]+)$`)
 var basicAuthPattern *regexp.Regexp = regexp.MustCompile(`^Basic ([a-zA-Z0-9\+/=]+)`)
 
-// ObjectRef ...
-type ObjectRef struct {
-	hashName string
-	digest   string
+// BlobRef ...
+type BlobRef struct {
+	HashName string
+	Digest   string
 }
 
 func putAllowed(req *http.Request) bool {
@@ -45,47 +45,47 @@ func putAllowed(req *http.Request) bool {
 }
 
 // ParsePath ...
-func ParsePath(path string) *ObjectRef {
+func ParsePath(path string) *BlobRef {
 	groups := getPutPattern.FindAllStringSubmatch(path, -1)
 	if len(groups) != 1 || len(groups[0]) != 3 {
 		return nil
 	}
-	obj := &ObjectRef{groups[0][1], groups[0][2]}
-	if obj.hashName == "sha1" && len(obj.digest) != 40 {
+	obj := &BlobRef{groups[0][1], groups[0][2]}
+	if obj.HashName == "sha1" && len(obj.Digest) != 40 {
 		return nil
 	}
 	return obj
 }
 
 // IsSupported ...
-func (o *ObjectRef) IsSupported() bool {
-	if o.hashName == "sha1" {
+func (o *BlobRef) IsSupported() bool {
+	if o.HashName == "sha1" {
 		return true
 	}
 	return false
 }
 
 // Hash ...
-func (o *ObjectRef) Hash() hash.Hash {
-	if o.hashName == "sha1" {
+func (o *BlobRef) Hash() hash.Hash {
+	if o.HashName == "sha1" {
 		return sha1.New()
 	}
 	return nil
 }
 
 // FileBaseName ...
-func (o *ObjectRef) FileBaseName() string {
-	return fmt.Sprintf("%s-%s.dat", o.hashName, o.digest)
+func (o *BlobRef) FileBaseName() string {
+	return fmt.Sprintf("%s-%s.dat", o.HashName, o.Digest)
 }
 
 // DirectoryName ...
-func (o *ObjectRef) DirectoryName() string {
-	return fmt.Sprintf("%s/%s/%s", *storageRoot, o.digest[0:3], o.digest[3:6])
+func (o *BlobRef) DirectoryName() string {
+	return fmt.Sprintf("%s/%s/%s", *storageRoot, o.Digest[0:3], o.Digest[3:6])
 }
 
 // FileName ...
-func (o *ObjectRef) FileName() string {
-	return fmt.Sprintf("%s/%s-%s.dat", o.DirectoryName(), o.hashName, o.digest)
+func (o *BlobRef) FileName() string {
+	return fmt.Sprintf("%s/%s-%s.dat", o.DirectoryName(), o.HashName, o.Digest)
 }
 
 func badRequestError(conn http.ResponseWriter, errorMessage string) {
@@ -139,7 +139,7 @@ func handleGet(conn http.ResponseWriter, req *http.Request) {
 
 	// If there's an error at this point, it's too late to tell the client,
 	// as they've already receiving bytes. but they should be smart enough
-	// to verify digest doesn't match. But we close the (chunked) response anyway,
+	// to verify Digest doesn't match. But we close the (chunked) response anyway,
 	// to further signal errors.
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error sending file: %v err=%v\n", objRef, err)
@@ -232,8 +232,8 @@ func handlePut(conn http.ResponseWriter, req *http.Request) {
 		serverError(conn, err)
 		return
 	}
-	if fmt.Sprintf("%x", hasher.Sum(nil)) != objRef.digest {
-		badRequestError(conn, "digest didn't match as declared")
+	if fmt.Sprintf("%x", hasher.Sum(nil)) != objRef.Digest {
+		badRequestError(conn, "Digest didn't match as declared")
 		return
 	}
 	if err = tempFile.Close(); err != nil {
