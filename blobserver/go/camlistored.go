@@ -14,14 +14,14 @@ import (
 	"regexp"
 )
 
-var listen *string = flag.String("listen", "0.0.0.0:3179", "host:port to listen on")
-var storageRoot *string = flag.String("root", "/tmp/camliroot", "Root directory to store files")
+var listen = flag.String("listen", "0.0.0.0:3179", "host:port to listen on")
+var storageRoot = flag.String("root", "/tmp/camliroot", "Root directory to store files")
 
 var putPassword string
 
-var getPutPattern *regexp.Regexp = regexp.MustCompile(`^/camli/(sha1)-([a-f0-9]+)$`)
-var basicAuthPattern *regexp.Regexp = regexp.MustCompile(`^Basic ([a-zA-Z0-9\+/=]+)`)
-var multipartContentPattern *regexp.Regexp = regexp.MustCompile(`^multipart/form-data; boudary="?([^" ]+)"?`)
+var getPutPattern = regexp.MustCompile(`^/camli/(sha1)-([a-f0-9]+)$`)
+var basicAuthPattern = regexp.MustCompile(`^Basic ([a-zA-Z0-9+/=]+)`)
+var multipartContentPattern = regexp.MustCompile(`^multipart/form-data; boundary="?([^" ]+)"?`)
 
 type MultiPartReader struct {
 	boundary string
@@ -48,7 +48,7 @@ func putAllowed(req *http.Request) bool {
 	if len(matches) != 1 || len(matches[0]) != 2 {
 		return false
 	}
-	var outBuf []byte = make([]byte, base64.StdEncoding.DecodedLen(len(matches[0][1])))
+	var outBuf = make([]byte, base64.StdEncoding.DecodedLen(len(matches[0][1])))
 	bytes, err := base64.StdEncoding.Decode(outBuf, []uint8(matches[0][1]))
 	if err != nil {
 		return false
@@ -132,7 +132,7 @@ func handleCamli(conn http.ResponseWriter, req *http.Request) {
 
 func handleMultiPartUpload(conn http.ResponseWriter, req *http.Request) {
 	if !(req.Method == "POST" && req.URL.Path == "/camli/upload") {
-		badRequestError(conn, "Inconfigured handler.")
+		badRequestError(conn, "In-configured handler.")
 	}
 	contentType := req.Header.Get("Content-Type")
 	groups := multipartContentPattern.FindAllStringSubmatch(contentType, -1)

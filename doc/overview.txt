@@ -17,3 +17,45 @@ Design goals:
   five decades after I die doesn't even know that Camlistore was being
   used...) should be easy for future digital archealogista to grok.
 
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+Design Assumptions
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+* disk is cheap and getting cheaper
+* bandwidht is high and getting faster
+* plentiful cpu & compression will fix size & redundacy of metadata
+
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+Layer 1:
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+* content-addressable blobs only
+  - no notion of "files", filenames, dates, streams, encryption,
+    permissions, metadata.
+* immutable
+* only operations:
+  - store(digest, bytes)
+  - check(digest) => bool (have it or not)
+  - get(digest) => bytes
+  - list([start_digest]) => [(digest[, size]), ...]+
+* amenable to implementation of ordinary filesystems (e.g. ext3, vfat,
+ntfs) or on amazon S3, BigTable, AppEngine DataStore, Azure, Hadoop
+HDFS, etc.
+
+
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+Schema of files/objects in Layer 1:
+=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+
+* Let's start by describing the storage files that aren't self-describing,
+  e.g "some-notes.txt" (as oppesed to jpeg file from a camera that might
+  likely contain EXIF data, addressed later...). This file, for reference, 
+  is in doc/example/some-notes.txt
+
+* The bytes of file "some-notes.txt" are stored as-in in one blob,
+  addressed as "sha1-d90169237b4bf4317003ab1d31aff9cf021cbd5c".
+  (note the explicit naming of the hash function as part of the name,
+  for updgradability later, and so all parties involved know how to
+  verify it...)
+
+ 
