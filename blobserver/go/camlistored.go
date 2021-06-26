@@ -22,6 +22,7 @@ var putPassword string
 var getPutPattern = regexp.MustCompile(`^/camli/(sha1)-([a-f0-9]+)$`)
 var basicAuthPattern = regexp.MustCompile(`^Basic ([a-zA-Z0-9+/=]+)`)
 var multipartContentPattern = regexp.MustCompile(`^multipart/form-data; boundary="?([^" ]+)"?`)
+var blobRefPattern = regexp.MustCompile(`^([a-z0-9]+)-([a-f0-9]+)$`)
 
 type MultiPartReader struct {
 	boundary string
@@ -57,6 +58,11 @@ func putAllowed(req *http.Request) bool {
 	fmt.Println("Decode bytes:", bytes, " error: ", err)
 	fmt.Println("Got userPass:", password)
 	return password != "" && password == putPassword
+}
+
+func getAllowed(req *http.Request) bool {
+	// for now
+	return putAllowed(req)
 }
 
 // ParsePath ...
@@ -111,9 +117,13 @@ func serverError(conn http.ResponseWriter, err error) {
 }
 
 func handleCamli(conn http.ResponseWriter, req *http.Request) {
-
 	if req.Method == "POST" && req.URL.Path == "/camli/upload" {
 		handleMultiPartUpload(conn, req)
+		return
+	}
+
+	if req.Method == "POST" && req.URL.Path == "/camli/testform" {
+		handleTestForm(conn, req)
 		return
 	}
 
@@ -130,27 +140,114 @@ func handleCamli(conn http.ResponseWriter, req *http.Request) {
 	badRequestError(conn, "unsupported method.")
 }
 
+func handleCamliForm(conn http.ResponseWriter, req *http.Request) {
+	_, _ = fmt.Fprintf(conn, `
+<html>
+<body>
+<form method='POST' enctype="multipart/form-data" action="/camli/testform">
+<input type="hidden" name="имя" value="брэд" />
+Text unix: <input type="file" name="file-unix"><br>
+Text win: <input type="file" name="file-win"><br>
+Text mac: <input type="file" name="file-mac"><br>
+Image png: <input type="file" name="image-png"><br>
+<input type=submit>
+</form>
+</body>
+</html>
+`)
+}
+
+func handleTestForm(conn http.ResponseWriter, req *http.Request) {
+	if !(req.Method == "POST" && req.URL.Path == "/camli/testform") {
+		badRequestError(conn, "Inconfigured handler.")
+		return
+	}
+
+	multipart, err := req.MultipartReader()
+	if multipart == nil {
+		badRequestError(conn, fmt.Sprintf("Expected multipart/form-data POST request; %v", err))
+		return
+	}
+
+	if err != nil {
+		serverError(conn, err)
+		return
+	}
+
+	for {
+		part, err := multipart.NextPart()
+		if err != nil {
+			fmt.Println("Error reading:", err)
+			break
+		}
+		if part == nil {
+			break
+		}
+		formName := part.FormName()
+		fmt.Printf("New value [%s], part=%v\n", formName, part)
+
+		s := sha1.New()
+		if _, err = io.Copy(s, part); err != nil {
+			serverError(conn, err)
+			return
+		}
+		fmt.Printf("Got part digest %x\n", s.Sum(nil))
+	}
+	fmt.Println("Done reading multipart body.")
+}
+
 func handleMultiPartUpload(conn http.ResponseWriter, req *http.Request) {
 	if !(req.Method == "POST" && req.URL.Path == "/camli/upload") {
 		badRequestError(conn, "In-configured handler.")
 	}
-	contentType := req.Header.Get("Content-Type")
-	groups := multipartContentPattern.FindAllStringSubmatch(contentType, -1)
-	if len(groups) != 1 || len(groups[0]) != 2 {
-		badRequestError(conn, "Expected multipart/form-data Content-Type")
+
+	multipart, err := req.MultipartReader()
+	if multipart == nil {
+		badRequestError(conn,
+			fmt.Sprintf("Expected mutltipart/form-data POST POST request: %v", err))
 		return
 	}
 
-	boundary := groups[0][1]
-	bodyReader := &MultiPartReader{boundary, req.Body}
-	fmt.Println("body: ", bodyReader)
-	if _, err := io.Copy(os.Stdout, req.Body); err != nil {
+	if err != nil {
 		serverError(conn, err)
+		return
 	}
-	fmt.Println(conn, "test")
+
+	for {
+		part, err := multipart.NextPart()
+		if err != nil {
+			fmt.Println("Error reading multipart section: ", err)
+			break
+		}
+		if part == nil {
+			break
+		}
+		formName := part.FormName()
+		fmt.Printf("New value [%s], part=%v\n", formName, part)
+
+		matches := multipartContentPattern.FindAllStringSubmatch(formName, -1)
+		if len(matches) != 1 || len(matches[0]) != 3 {
+			fmt.Printf("Ignoring form key [%s]\n", formName)
+			continue
+		}
+		ref := &BlobRef{matches[0][1], matches[0][2]}
+		ok, err := receiveBlob(ref, part)
+		if !ok {
+			fmt.Printf("Error receiving blob %v: %v\n", ref, err)
+		} else {
+			fmt.Printf("Received blob %v\n", ref)
+		}
+	}
+	fmt.Println("Done reading multipart body.")
 }
 
 func handleGet(conn http.ResponseWriter, req *http.Request) {
+	if !getAllowed(req) {
+		conn.Header().Set("WWW-Authentication", "Basic realm=\"camlistored\"")
+		conn.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprintf(conn, "Authentication required.")
+		return
+	}
 	objRef := ParsePath(req.URL.Path)
 	if objRef == nil {
 		badRequestError(conn, "Malformed GET URL.")
@@ -214,38 +311,16 @@ func handleGet(conn http.ResponseWriter, req *http.Request) {
 
 }
 
-func handlePut(conn http.ResponseWriter, req *http.Request) {
-	objRef := ParsePath(req.URL.Path)
-	if objRef == nil {
-		badRequestError(conn, "Malformed PUT URL.")
-		return
-	}
-
-	if !objRef.IsSupported() {
-		badRequestError(conn, "unsupported object hash function")
-		return
-	}
-
-	if !putAllowed(req) {
-		conn.Header().Set("WWW-Authentication", "Basic realm=\"camlistored\"")
-		conn.WriteHeader(http.StatusUnauthorized)
-		_, _ = fmt.Fprint(conn, "Authentication required.")
-		return
-
-	}
-	// TODO(manunio): auth/authz checks here
-
-	hashedDirectory := objRef.DirectoryName()
+func receiveBlob(blobRef *BlobRef, source io.Reader) (ok bool, err error) {
+	hashedDirectory := blobRef.DirectoryName()
 
 	if err := os.MkdirAll(hashedDirectory, 0700); err != nil {
-		serverError(conn, err)
 		return
 	}
 
-	tempFile, err := ioutil.TempFile(hashedDirectory, objRef.FileBaseName()+".tmp")
+	tempFile, err := ioutil.TempFile(hashedDirectory, blobRef.FileBaseName()+".tmp")
 
 	if err != nil {
-		serverError(conn, err)
 		return
 	}
 
@@ -258,48 +333,67 @@ func handlePut(conn http.ResponseWriter, req *http.Request) {
 		}
 	}()
 
-	written, err := io.Copy(tempFile, req.Body)
+	written, err := io.Copy(tempFile, source)
 	if err != nil {
-		serverError(conn, err)
 		return
 	}
 	if _, err = tempFile.Seek(0, 0); err != nil {
-		serverError(conn, err)
 		return
 	}
 
-	hasher := objRef.Hash()
+	hasher := blobRef.Hash()
 
 	if _, err := io.Copy(hasher, tempFile); err != nil {
-		serverError(conn, err)
 		return
 	}
-	if fmt.Sprintf("%x", hasher.Sum(nil)) != objRef.Digest {
-		badRequestError(conn, "Digest didn't match as declared")
+	if fmt.Sprintf("%x", hasher.Sum(nil)) != blobRef.Digest {
 		return
 	}
 	if err = tempFile.Close(); err != nil {
-		serverError(conn, err)
 		return
 	}
 
-	fileName := objRef.FileName()
+	fileName := blobRef.FileName()
 	if err = os.Rename(tempFile.Name(), fileName); err != nil {
-		serverError(conn, err)
 		return
 	}
 
 	stat, err := os.Lstat(fileName)
 	if err != nil {
-		serverError(conn, err)
 		return
 	}
 	if !stat.Mode().IsRegular() || stat.Size() != written {
-		serverError(conn, errors.New("written size didn't match"))
-		// unlink it? Bogus? Naah, better to not lose data.
-		// we can clean it up later in GC phase.
+		return false, errors.New("written size didn't match")
 	}
 	success = true
+	return true, nil
+}
+
+func handlePut(conn http.ResponseWriter, req *http.Request) {
+	if !putAllowed(req) {
+		conn.Header().Set("WWW-Authentication", "Basic realm=\"camlistored\"")
+		conn.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprint(conn, "Authentication required.")
+		return
+
+	}
+
+	blobRef := ParsePath(req.URL.Path)
+	if blobRef == nil {
+		badRequestError(conn, "Malformed PUT URL.")
+		return
+	}
+
+	if !blobRef.IsSupported() {
+		badRequestError(conn, "unsupported object hash function")
+		return
+	}
+
+	// TODO(manun): auth/authz checks here
+	if _, err := receiveBlob(blobRef, req.Body); err != nil {
+		serverError(conn, err)
+		return
+	}
 	_, _ = fmt.Fprintf(conn, "OK")
 }
 
