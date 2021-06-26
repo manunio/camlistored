@@ -1,7 +1,7 @@
 include $(GOROOT)/src/Make.$(GOARCH)
 
-TARG=camlistored
+TARG=camliup
 GOFILES=\
-		camlistored.go
-		blobref.go
+	camliup.go\
+
 include $(GOROOT)/src/Make.cmd

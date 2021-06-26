@@ -37,6 +37,11 @@ func blobFromPattern(r *regexp.Regexp, s string) *BlobRef {
 	return blobIfValid(matches[0][1], matches[0][2])
 }
 
+// String ...
+func (o *BlobRef) String() string {
+	return fmt.Sprintf("%s-%s", o.HashName, o.Digest)
+}
+
 // ParseBlobRef ...
 func ParseBlobRef(ref string) *BlobRef {
 	return blobFromPattern(blobRefPattern, ref)

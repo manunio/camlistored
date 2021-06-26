@@ -4,6 +4,7 @@ import (
 	"./util"
 	"crypto/sha1"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,32 +21,6 @@ var storageRoot = flag.String("root", "/tmp/camliroot", "Root directory to store
 var putPassword string
 
 var basicAuthPattern = regexp.MustCompile(`^Basic ([a-zA-Z0-9+/=]+)`)
-var multipartContentPattern = regexp.MustCompile(`^multipart/form-data; boundary="?([^" ]+)"?`)
-
-func putAllowed(req *http.Request) bool {
-	auth := req.Header.Get("Authorization")
-	if auth == "" {
-		return false
-	}
-	matches := basicAuthPattern.FindAllStringSubmatch(auth, -1)
-	if len(matches) != 1 || len(matches[0]) != 2 {
-		return false
-	}
-	var outBuf = make([]byte, base64.StdEncoding.DecodedLen(len(matches[0][1])))
-	bytes, err := base64.StdEncoding.Decode(outBuf, []uint8(matches[0][1]))
-	if err != nil {
-		return false
-	}
-	password := string(outBuf)
-	fmt.Println("Decode bytes:", bytes, " error: ", err)
-	fmt.Println("Got userPass:", password)
-	return password != "" && password == putPassword
-}
-
-func getAllowed(req *http.Request) bool {
-	// for now
-	return putAllowed(req)
-}
 
 func badRequestError(conn http.ResponseWriter, errorMessage string) {
 	conn.WriteHeader(http.StatusBadRequest)
@@ -57,65 +32,35 @@ func serverError(conn http.ResponseWriter, err error) {
 	_, _ = fmt.Fprintf(conn, "Server error: %s\n", err)
 }
 
-func handleCamli(conn http.ResponseWriter, req *http.Request) {
-	switch req.Method {
-	case "GET":
-		handleCamliForm(conn, req)
-	case "POST":
-		switch req.URL.Path {
-		case "/camli/preupload":
-			handlePreUpload(conn, req)
-		case "/camli/upload":
-			handleMultiPartUpload(conn, req)
-		case "/camli/testform":
-			handleTestForm(conn, req)
-		case "/camli/form": // debug only
-			handleCamliForm(conn, req)
-		default:
-			badRequestError(conn, "Unsupported POST path.")
-		}
-	case "PUT": // no longer part of spec
-		handlePut(conn, req)
-	default:
-		badRequestError(conn, "Unsupported method.")
+func putAllowed(req *http.Request) bool {
+	auth := req.Header.Get("Authorization")
+	if auth == "" {
+		return false
 	}
+
+	matches := basicAuthPattern.FindAllStringSubmatch(auth, -1)
+	if len(matches) != 1 || len(matches[0]) != 2 {
+		return false
+	}
+
+	var outBuf = make([]byte, base64.StdEncoding.DecodedLen(len(matches[0][1])))
+	bytes, err := base64.StdEncoding.Decode(outBuf, []uint8(matches[0][1]))
+	if err != nil {
+		return false
+	}
+
+	password := string(outBuf)
+	fmt.Println("Decode bytes:", bytes, " error: ", err)
+	fmt.Println("Got userPass:", password)
+
+	return password != "" && password == putPassword
 }
-func handlePreUpload(conn http.ResponseWriter, req *http.Request) {
-	if !(req.Method == "POST" && req.URL.Path == "/camli/preupload") {
-		badRequestError(conn, "Inconfigured handler.")
-		return
-	}
-	if err := req.ParseForm(); err != nil {
-		serverError(conn, err)
-		return
-	}
-	camliVersion := req.FormValue("camliVersion")
-	if camliVersion == "" {
-		badRequestError(conn, "No camliversion")
-		return
-	}
-	n := 0
-	for {
-		n++
-		key := fmt.Sprintf("blob%v", n)
-		value := req.FormValue(key)
-		if value == "" {
-			break
-		}
-		fmt.Println("Request to upload: " + value)
-		ref := ParseBlobRef(value)
-		if ref == nil {
-			badRequestError(conn, "Bogus blobref for key"+key)
-			return
-		}
-		if !ref.IsSupported() {
-			badRequestError(conn, "Unsupported or bogus blobref "+key)
-			return
-		}
-	}
-	// TODO(manun): implement
-	fmt.Println("Got Form: ", req)
+
+func getAllowed(req *http.Request) bool {
+	// for now
+	return putAllowed(req)
 }
+
 func handleCamliForm(conn http.ResponseWriter, req *http.Request) {
 	_, _ = fmt.Fprintf(conn, `
 <html>
@@ -133,87 +78,44 @@ Image png: <input type="file" name="image-png"><br>
 `)
 }
 
-func handleTestForm(conn http.ResponseWriter, req *http.Request) {
-	if !(req.Method == "POST" && req.URL.Path == "/camli/testform") {
-		badRequestError(conn, "Inconfigured handler.")
-		return
-	}
-
-	multipart, err := req.MultipartReader()
-	if multipart == nil {
-		badRequestError(conn, fmt.Sprintf("Expected multipart/form-data POST request; %v", err))
-		return
-	}
-
+func returnJSON(conn http.ResponseWriter, data interface{}) {
+	bytes, err := json.MarshalIndent(data, "", " ")
 	if err != nil {
+		badRequestError(conn, fmt.Sprintf("JSON serialization error: %v", err))
+		return
+	}
+	if _, err = conn.Write(bytes); err != nil {
 		serverError(conn, err)
 		return
 	}
-
-	for {
-		part, err := multipart.NextPart()
-		if err != nil {
-			fmt.Println("Error reading:", err)
-			break
-		}
-		if part == nil {
-			break
-		}
-		formName := part.FormName()
-		fmt.Printf("New value [%s], part=%v\n", formName, part)
-
-		s := sha1.New()
-		if _, err = io.Copy(s, part); err != nil {
-			serverError(conn, err)
-			return
-		}
-		fmt.Printf("Got part digest %x\n", s.Sum(nil))
+	if _, err = conn.Write([]byte("\n")); err != nil {
+		serverError(conn, err)
+		return
 	}
-	fmt.Println("Done reading multipart body.")
 }
 
-func handleMultiPartUpload(conn http.ResponseWriter, req *http.Request) {
-	if !(req.Method == "POST" && req.URL.Path == "/camli/upload") {
-		badRequestError(conn, "In-configured handler.")
-	}
-
-	multipart, err := req.MultipartReader()
-	if multipart == nil {
-		badRequestError(conn,
-			fmt.Sprintf("Expected mutltipart/form-data POST POST request: %v", err))
-		return
-	}
-
-	if err != nil {
-		serverError(conn, err)
-		return
-	}
-
-	for {
-		part, err := multipart.NextPart()
-		if err != nil {
-			fmt.Println("Error reading multipart section: ", err)
-			break
+func handleCamli(conn http.ResponseWriter, req *http.Request) {
+	switch req.Method {
+	case "GET":
+		handleGet(conn, req)
+	case "POST":
+		switch req.URL.Path {
+		case "/camli/preupload":
+			handlePreUpload(conn, req)
+		case "/camli/upload":
+			handleMultiPartUpload(conn, req)
+		case "/camli/testform": // debug only
+			handleTestForm(conn, req)
+		case "/camli/form": // debug only
+			handleCamliForm(conn, req)
+		default:
+			badRequestError(conn, "Unsupported POST path.")
 		}
-		if part == nil {
-			break
-		}
-		formName := part.FormName()
-		fmt.Printf("New value [%s], part=%v\n", formName, part)
-
-		ref := ParseBlobRef(formName)
-		if ref == nil {
-			fmt.Printf("Ignoring form key [%s]\n", formName)
-			continue
-		}
-		ok, err := receiveBlob(ref, part)
-		if !ok {
-			fmt.Printf("Error receiving blob %v: %v\n", ref, err)
-		} else {
-			fmt.Printf("Received blob %v\n", ref)
-		}
+	case "PUT": // no longer part of spec
+		handlePut(conn, req)
+	default:
+		badRequestError(conn, "Unsupported method.")
 	}
-	fmt.Println("Done reading multipart body.")
 }
 
 func handleGet(conn http.ResponseWriter, req *http.Request) {
@@ -286,6 +188,158 @@ func handleGet(conn http.ResponseWriter, req *http.Request) {
 
 }
 
+func handleTestForm(conn http.ResponseWriter, req *http.Request) {
+	if !(req.Method == "POST" && req.URL.Path == "/camli/testform") {
+		badRequestError(conn, "Inconfigured handler.")
+		return
+	}
+
+	multipart, err := req.MultipartReader()
+	if multipart == nil {
+		badRequestError(conn, fmt.Sprintf("Expected multipart/form-data POST request; %v", err))
+		return
+	}
+
+	if err != nil {
+		serverError(conn, err)
+		return
+	}
+
+	for {
+		part, err := multipart.NextPart()
+		if err != nil {
+			fmt.Println("Error reading:", err)
+			break
+		}
+		if part == nil {
+			break
+		}
+		formName := part.FormName()
+		fmt.Printf("New value [%s], part=%v\n", formName, part)
+
+		s := sha1.New()
+		if _, err = io.Copy(s, part); err != nil {
+			serverError(conn, err)
+			return
+		}
+		fmt.Printf("Got part digest %x\n", s.Sum(nil))
+	}
+	fmt.Println("Done reading multipart body.")
+}
+
+func handlePreUpload(conn http.ResponseWriter, req *http.Request) {
+	if !(req.Method == "POST" && req.URL.Path == "/camli/preupload") {
+		badRequestError(conn, "Inconfigured handler.")
+		return
+	}
+	if err := req.ParseForm(); err != nil {
+		serverError(conn, err)
+		return
+	}
+	camliVersion := req.FormValue("camliVersion")
+	if camliVersion == "" {
+		badRequestError(conn, "No camliversion")
+		return
+	}
+	n := 0
+	var haveVector []*map[string]interface{}
+	haveChan := make(chan *map[string]interface{})
+	for {
+		key := fmt.Sprintf("	blob%v", n+1)
+		value := req.FormValue(key)
+		if value == "" {
+			break
+		}
+		ref := ParseBlobRef(value)
+		if ref == nil {
+			badRequestError(conn, "Bogus blobref for key"+key)
+			return
+		}
+		if !ref.IsSupported() {
+			badRequestError(conn, "Unsupported or bogus blobref "+key)
+			return
+		}
+		n++
+
+		// parallel stat all the files
+		go func() {
+			fi, err := os.Stat(ref.FileName())
+			if err == nil && fi.Mode().IsRegular() {
+				info := make(map[string]interface{})
+				info["blobRef"] = ref.String()
+				info["size"] = fi.Size()
+				haveChan <- &info
+			} else {
+				haveChan <- nil
+			}
+		}()
+	}
+
+	if n > 0 {
+		for have := range haveChan {
+			if have != nil {
+				haveVector = append(haveVector, have)
+			}
+			n--
+			if n == 0 {
+				break
+			}
+		}
+	}
+
+	ret := make(map[string]interface{})
+	ret["maxUploadSize"] = 2147483647 // 2GB.. *shrug* :p
+	ret["alreadyHave"] = haveVector
+	ret["uploadUrl"] = "http://localhost:3179/camli/upload"
+	ret["uploadUrlExpirationSeconds"] = 86400
+	returnJSON(conn, ret)
+
+}
+
+func handleMultiPartUpload(conn http.ResponseWriter, req *http.Request) {
+	if !(req.Method == "POST" && req.URL.Path == "/camli/upload") {
+		badRequestError(conn, "In-configured handler.")
+	}
+
+	multipart, err := req.MultipartReader()
+	if multipart == nil {
+		badRequestError(conn,
+			fmt.Sprintf("Expected mutltipart/form-data POST POST request: %v", err))
+		return
+	}
+
+	if err != nil {
+		serverError(conn, err)
+		return
+	}
+
+	for {
+		part, err := multipart.NextPart()
+		if err != nil {
+			fmt.Println("Error reading multipart section: ", err)
+			break
+		}
+		if part == nil {
+			break
+		}
+		formName := part.FormName()
+		fmt.Printf("New value [%s], part=%v\n", formName, part)
+
+		ref := ParseBlobRef(formName)
+		if ref == nil {
+			fmt.Printf("Ignoring form key [%s]\n", formName)
+			continue
+		}
+		ok, err := receiveBlob(ref, part)
+		if !ok {
+			fmt.Printf("Error receiving blob %v: %v\n", ref, err)
+		} else {
+			fmt.Printf("Received blob %v\n", ref)
+		}
+	}
+	fmt.Println("Done reading multipart body.")
+}
+
 func receiveBlob(blobRef *BlobRef, source io.Reader) (ok bool, err error) {
 	hashedDirectory := blobRef.DirectoryName()
 	if err = os.MkdirAll(hashedDirectory, 0700); err != nil {
@@ -334,14 +388,6 @@ func receiveBlob(blobRef *BlobRef, source io.Reader) (ok bool, err error) {
 }
 
 func handlePut(conn http.ResponseWriter, req *http.Request) {
-	if !putAllowed(req) {
-		conn.Header().Set("WWW-Authentication", "Basic realm=\"camlistored\"")
-		conn.WriteHeader(http.StatusUnauthorized)
-		_, _ = fmt.Fprint(conn, "Authentication required.")
-		return
-
-	}
-
 	blobRef := ParsePath(req.URL.Path)
 	if blobRef == nil {
 		badRequestError(conn, "Malformed PUT URL.")
@@ -351,6 +397,14 @@ func handlePut(conn http.ResponseWriter, req *http.Request) {
 	if !blobRef.IsSupported() {
 		badRequestError(conn, "unsupported object hash function")
 		return
+	}
+
+	if !putAllowed(req) {
+		conn.Header().Set("WWW-Authentication", "Basic realm=\"camlistored\"")
+		conn.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprint(conn, "Authentication required.")
+		return
+
 	}
 
 	// TODO(manun): auth/authz checks here
