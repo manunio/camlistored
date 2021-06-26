@@ -1,12 +1,12 @@
 package main
 
 import (
+	"./util"
 	"crypto/sha1"
 	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
-	"hash"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -19,26 +19,8 @@ var storageRoot = flag.String("root", "/tmp/camliroot", "Root directory to store
 
 var putPassword string
 
-var getPutPattern = regexp.MustCompile(`^/camli/(sha1)-([a-f0-9]+)$`)
 var basicAuthPattern = regexp.MustCompile(`^Basic ([a-zA-Z0-9+/=]+)`)
 var multipartContentPattern = regexp.MustCompile(`^multipart/form-data; boundary="?([^" ]+)"?`)
-var blobRefPattern = regexp.MustCompile(`^([a-z0-9]+)-([a-f0-9]+)$`)
-
-type MultiPartReader struct {
-	boundary string
-	reader   io.Reader
-}
-
-type MultiPartBodyPart struct {
-	Header map[string]string
-	Body   io.Reader
-}
-
-// BlobRef ...
-type BlobRef struct {
-	HashName string
-	Digest   string
-}
 
 func putAllowed(req *http.Request) bool {
 	auth := req.Header.Get("Authorization")
@@ -65,47 +47,6 @@ func getAllowed(req *http.Request) bool {
 	return putAllowed(req)
 }
 
-// ParsePath ...
-func ParsePath(path string) *BlobRef {
-	groups := getPutPattern.FindAllStringSubmatch(path, -1)
-	if len(groups) != 1 || len(groups[0]) != 3 {
-		return nil
-	}
-	obj := &BlobRef{groups[0][1], groups[0][2]}
-	if obj.HashName == "sha1" && len(obj.Digest) != 40 {
-		return nil
-	}
-	return obj
-}
-
-// IsSupported ...
-func (o *BlobRef) IsSupported() bool {
-	return o.HashName == "sha1"
-}
-
-// Hash ...
-func (o *BlobRef) Hash() hash.Hash {
-	if o.HashName == "sha1" {
-		return sha1.New()
-	}
-	return nil
-}
-
-// FileBaseName ...
-func (o *BlobRef) FileBaseName() string {
-	return fmt.Sprintf("%s-%s.dat", o.HashName, o.Digest)
-}
-
-// DirectoryName ...
-func (o *BlobRef) DirectoryName() string {
-	return fmt.Sprintf("%s/%s/%s", *storageRoot, o.Digest[0:3], o.Digest[3:6])
-}
-
-// FileName ...
-func (o *BlobRef) FileName() string {
-	return fmt.Sprintf("%s/%s-%s.dat", o.DirectoryName(), o.HashName, o.Digest)
-}
-
 func badRequestError(conn http.ResponseWriter, errorMessage string) {
 	conn.WriteHeader(http.StatusBadRequest)
 	_, _ = fmt.Fprintf(conn, "%s\n", errorMessage)
@@ -117,29 +58,64 @@ func serverError(conn http.ResponseWriter, err error) {
 }
 
 func handleCamli(conn http.ResponseWriter, req *http.Request) {
-	if req.Method == "POST" && req.URL.Path == "/camli/upload" {
-		handleMultiPartUpload(conn, req)
-		return
-	}
-
-	if req.Method == "POST" && req.URL.Path == "/camli/testform" {
-		handleTestForm(conn, req)
-		return
-	}
-
-	if req.Method == "PUT" {
+	switch req.Method {
+	case "GET":
+		handleCamliForm(conn, req)
+	case "POST":
+		switch req.URL.Path {
+		case "/camli/preupload":
+			handlePreUpload(conn, req)
+		case "/camli/upload":
+			handleMultiPartUpload(conn, req)
+		case "/camli/testform":
+			handleTestForm(conn, req)
+		case "/camli/form": // debug only
+			handleCamliForm(conn, req)
+		default:
+			badRequestError(conn, "Unsupported POST path.")
+		}
+	case "PUT": // no longer part of spec
 		handlePut(conn, req)
-		return
+	default:
+		badRequestError(conn, "Unsupported method.")
 	}
-
-	if req.Method == "GET" {
-		handleGet(conn, req)
-		return
-	}
-
-	badRequestError(conn, "unsupported method.")
 }
-
+func handlePreUpload(conn http.ResponseWriter, req *http.Request) {
+	if !(req.Method == "POST" && req.URL.Path == "/camli/preupload") {
+		badRequestError(conn, "Inconfigured handler.")
+		return
+	}
+	if err := req.ParseForm(); err != nil {
+		serverError(conn, err)
+		return
+	}
+	camliVersion := req.FormValue("camliVersion")
+	if camliVersion == "" {
+		badRequestError(conn, "No camliversion")
+		return
+	}
+	n := 0
+	for {
+		n++
+		key := fmt.Sprintf("blob%v", n)
+		value := req.FormValue(key)
+		if value == "" {
+			break
+		}
+		fmt.Println("Request to upload: " + value)
+		ref := ParseBlobRef(value)
+		if ref == nil {
+			badRequestError(conn, "Bogus blobref for key"+key)
+			return
+		}
+		if !ref.IsSupported() {
+			badRequestError(conn, "Unsupported or bogus blobref "+key)
+			return
+		}
+	}
+	// TODO(manun): implement
+	fmt.Println("Got Form: ", req)
+}
 func handleCamliForm(conn http.ResponseWriter, req *http.Request) {
 	_, _ = fmt.Fprintf(conn, `
 <html>
@@ -225,12 +201,11 @@ func handleMultiPartUpload(conn http.ResponseWriter, req *http.Request) {
 		formName := part.FormName()
 		fmt.Printf("New value [%s], part=%v\n", formName, part)
 
-		matches := multipartContentPattern.FindAllStringSubmatch(formName, -1)
-		if len(matches) != 1 || len(matches[0]) != 3 {
+		ref := ParseBlobRef(formName)
+		if ref == nil {
 			fmt.Printf("Ignoring form key [%s]\n", formName)
 			continue
 		}
-		ref := &BlobRef{matches[0][1], matches[0][2]}
 		ok, err := receiveBlob(ref, part)
 		if !ok {
 			fmt.Printf("Error receiving blob %v: %v\n", ref, err)
@@ -313,13 +288,12 @@ func handleGet(conn http.ResponseWriter, req *http.Request) {
 
 func receiveBlob(blobRef *BlobRef, source io.Reader) (ok bool, err error) {
 	hashedDirectory := blobRef.DirectoryName()
-
-	if err := os.MkdirAll(hashedDirectory, 0700); err != nil {
+	if err = os.MkdirAll(hashedDirectory, 0700); err != nil {
 		return
 	}
 
-	tempFile, err := ioutil.TempFile(hashedDirectory, blobRef.FileBaseName()+".tmp")
-
+	var tempFile *os.File
+	tempFile, err = ioutil.TempFile(hashedDirectory, blobRef.FileBaseName()+".tmp")
 	if err != nil {
 		return
 	}
@@ -333,20 +307,10 @@ func receiveBlob(blobRef *BlobRef, source io.Reader) (ok bool, err error) {
 		}
 	}()
 
-	written, err := io.Copy(tempFile, source)
+	sha1Hash := sha1.New()
+	var written int64
+	written, err = io.Copy(util.NewTee(sha1Hash, tempFile), source)
 	if err != nil {
-		return
-	}
-	if _, err = tempFile.Seek(0, 0); err != nil {
-		return
-	}
-
-	hasher := blobRef.Hash()
-
-	if _, err := io.Copy(hasher, tempFile); err != nil {
-		return
-	}
-	if fmt.Sprintf("%x", hasher.Sum(nil)) != blobRef.Digest {
 		return
 	}
 	if err = tempFile.Close(); err != nil {
@@ -397,7 +361,7 @@ func handlePut(conn http.ResponseWriter, req *http.Request) {
 	_, _ = fmt.Fprintf(conn, "OK")
 }
 
-// HandleRoot func
+// HandleRoot ...
 func HandleRoot(conn http.ResponseWriter, req *http.Request) {
 	_, _ = fmt.Fprintf(conn, `This is camlistored, a Camlistore storage daemon`)
 }
