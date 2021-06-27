@@ -106,8 +106,10 @@ func TestBlobRef_Hash(t *testing.T) {
 
 func TestBlobRef_DirectoryName(t *testing.T) {
 	blobRef := ParseBlobRef(ref)
-	digest := strings.Split(ref, "-")[1]
-	assert.Equal(t, *storageRoot+"/"+digest[0:3]+"/"+digest[3:6], blobRef.DirectoryName())
+	refSplit := strings.Split(ref, "-")
+	hashName := refSplit[0]
+	digest := refSplit[1]
+	assert.Equal(t, *storageRoot+"/"+hashName+"/"+digest[0:3]+"/"+digest[3:6], blobRef.DirectoryName())
 }
 
 func TestBlobRef_FileBaseName(t *testing.T) {
@@ -123,7 +125,7 @@ func TestBlobRef_FileName(t *testing.T) {
 	refSplit := strings.Split(ref, "-")
 	hashName := refSplit[0]
 	digest := refSplit[1]
-	directoryName := *storageRoot + "/" + digest[0:3] + "/" + digest[3:6]
+	directoryName := *storageRoot + "/" + hashName + "/" + digest[0:3] + "/" + digest[3:6]
 	assert.Equal(t, directoryName+"/"+hashName+"-"+digest+".dat", blobRef.FileName())
 }
 
