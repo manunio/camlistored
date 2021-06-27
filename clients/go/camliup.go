@@ -34,7 +34,7 @@ func (a *Agent) Upload(h *UploadHandler) {
 	url := fmt.Sprintf("%s/camli/preupload", a.server)
 	fmt.Println("Need to upload: ", h, "to", url)
 
-	e := func(msg string, e error) {
+	errorMessage := func(msg string, e error) {
 		_, _ = fmt.Fprintf(os.Stderr, "%s on %v: %v\n", msg, h.blobRef, e)
 		return
 	}
@@ -55,27 +55,47 @@ func (a *Agent) Upload(h *UploadHandler) {
 	pur := make(map[string]interface{})
 	jerr := json.Unmarshal(buf.Bytes(), &pur)
 	if jerr != nil {
-		e("preupload parse error", jerr)
+		errorMessage("preupload parse error", jerr)
 		return
 	}
 	uploadUrl, ok := pur["uploadUrl"].(string)
 	if uploadUrl == "" {
-		e("no uploadUrl in preupload response", nil)
+		errorMessage("no uploadUrl in preupload response", nil)
 		return
 	}
 	alreadyHave, ok := pur["alreadyHave"].([]interface{})
 	if !(ok) {
-		e("no alreadyHave array in preupload response", nil)
+		errorMessage("no alreadyHave array in preupload response", nil)
 	}
 
 	for _, haveObj := range alreadyHave {
 		haveObj := haveObj.(map[string]interface{})
 		if haveObj["blobRef"].(string) == h.blobRef {
 			fmt.Println("already have it!")
+			// TODO: signal success
 			return
 		}
 	}
 	fmt.Println("preupload done:", pur, alreadyHave)
+
+	boundary := "--sdf8sd8f7s9df9s7df9sd7sdf9s879vs7d8v7sd8v7sd8v"
+	_, _ = h.contents.Seek(0, 0)
+	resp, err = http.Post(uploadUrl,
+		"mutipart/form-data; boundary="+boundary,
+		io.MultiReader(
+			strings.NewReader(fmt.Sprintf(
+				"%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n",
+				boundary,
+				h.blobRef)),
+			h.contents,
+			strings.NewReader("\r\n"+boundary+"--\r\n")),
+	)
+	if err != nil {
+		errorMessage("camli upload error", err)
+		fmt.Println("Uploaded!")
+		fmt.Println("Got response: ", resp)
+		_ = resp.Write(os.Stdout)
+	}
 }
 
 func (a *Agent) Wait() int {

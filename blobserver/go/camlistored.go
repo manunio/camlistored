@@ -1,13 +1,13 @@
 package main
 
 import (
-	"./util"
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/manunio/camlistored/blobserver/go/util"
 	"io"
 	"io/ioutil"
 	"net/http"
