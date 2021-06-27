@@ -13,14 +13,58 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"strings"
 )
 
-var listen = flag.String("listen", "0.0.0.0:3179", "host:port to listen on")
-var storageRoot = flag.String("root", "/tmp/camliroot", "Root directory to store files")
+var listen *string = flag.String("listen", "0.0.0.0:3179", "host:port to listen on")
+var storageRoot *string = flag.String("root", "/tmp/camliroot", "Root directory to store files")
+var stealthMode *bool = flag.Bool("stealth", true, "Run in stealth mode.")
 
-var putPassword string
+var accessPassword string
 
 var basicAuthPattern = regexp.MustCompile(`^Basic ([a-zA-Z0-9+/=]+)`)
+
+func isAuthorized(req *http.Request) bool {
+	auth := req.Header.Get("Authorization")
+	if auth == "" {
+		return false
+	}
+
+	matches := basicAuthPattern.FindAllStringSubmatch(auth, -1)
+	if len(matches) != 1 || len(matches[0]) != 2 {
+		return false
+	}
+
+	encoded := matches[0][1]
+	enc := base64.StdEncoding
+	decBuff := make([]byte, enc.DecodedLen(len(encoded)))
+
+	n, err := enc.Decode(decBuff, []byte(encoded))
+	if err != nil {
+		return false
+	}
+
+	userpass := strings.Split(string(decBuff[0:n]), ":")
+	if len(userpass) != 2 {
+		fmt.Println("didn't get two pieces")
+		return false
+	}
+	password := userpass[1]
+	return password != "" && password == accessPassword
+}
+
+func requireAuth(handler func(conn http.ResponseWriter, req *http.Request)) func(conn http.ResponseWriter,
+	req *http.Request) {
+	return func(conn http.ResponseWriter, req *http.Request) {
+		if !isAuthorized(req) {
+			conn.Header().Set("WWW-Authenticate", "Basic realm=\"camlistored\"")
+			conn.WriteHeader(http.StatusUnauthorized)
+			_, _ = fmt.Fprintf(conn, "Authentication required.\n")
+			return
+		}
+		handler(conn, req)
+	}
+}
 
 func badRequestError(conn http.ResponseWriter, errorMessage string) {
 	conn.WriteHeader(http.StatusBadRequest)
@@ -33,27 +77,7 @@ func serverError(conn http.ResponseWriter, err error) {
 }
 
 func putAllowed(req *http.Request) bool {
-	auth := req.Header.Get("Authorization")
-	if auth == "" {
-		return false
-	}
-
-	matches := basicAuthPattern.FindAllStringSubmatch(auth, -1)
-	if len(matches) != 1 || len(matches[0]) != 2 {
-		return false
-	}
-
-	var outBuf = make([]byte, base64.StdEncoding.DecodedLen(len(matches[0][1])))
-	bytes, err := base64.StdEncoding.Decode(outBuf, []uint8(matches[0][1]))
-	if err != nil {
-		return false
-	}
-
-	password := string(outBuf)
-	fmt.Println("Decode bytes:", bytes, " error: ", err)
-	fmt.Println("Got userPass:", password)
-
-	return password != "" && password == putPassword
+	return isAuthorized(req)
 }
 
 func getAllowed(req *http.Request) bool {
@@ -95,27 +119,27 @@ func returnJSON(conn http.ResponseWriter, data interface{}) {
 }
 
 func handleCamli(conn http.ResponseWriter, req *http.Request) {
+	handler := func(conn http.ResponseWriter, req *http.Request) {
+		badRequestError(conn, "Unsupported path or method.")
+	}
 	switch req.Method {
 	case "GET":
-		handleGet(conn, req)
+		handler = requireAuth(handleGet)
 	case "POST":
 		switch req.URL.Path {
 		case "/camli/preupload":
-			handlePreUpload(conn, req)
+			handler = requireAuth(handlePreUpload)
 		case "/camli/upload":
-			handleMultiPartUpload(conn, req)
+			handler = requireAuth(handleMultiPartUpload)
 		case "/camli/testform": // debug only
-			handleTestForm(conn, req)
+			handler = handleTestForm
 		case "/camli/form": // debug only
-			handleCamliForm(conn, req)
-		default:
-			badRequestError(conn, "Unsupported POST path.")
+			handler = handleCamliForm
 		}
 	case "PUT": // no longer part of spec
-		handlePut(conn, req)
-	default:
-		badRequestError(conn, "Unsupported method.")
+		handler = requireAuth(handlePut)
 	}
+	handler(conn, req)
 }
 
 func handleGet(conn http.ResponseWriter, req *http.Request) {
@@ -236,7 +260,7 @@ func handlePreUpload(conn http.ResponseWriter, req *http.Request) {
 		serverError(conn, err)
 		return
 	}
-	camliVersion := req.FormValue("camliVersion")
+	camliVersion := req.FormValue("camliversion")
 	if camliVersion == "" {
 		badRequestError(conn, "No camliversion")
 		return
@@ -245,7 +269,7 @@ func handlePreUpload(conn http.ResponseWriter, req *http.Request) {
 	var haveVector []*map[string]interface{}
 	haveChan := make(chan *map[string]interface{})
 	for {
-		key := fmt.Sprintf("	blob%v", n+1)
+		key := fmt.Sprintf("blob%v", n+1)
 		value := req.FormValue(key)
 		if value == "" {
 			break
@@ -287,9 +311,12 @@ func handlePreUpload(conn http.ResponseWriter, req *http.Request) {
 		}
 	}
 
+	tmp := make([]*map[string]interface{}, len(haveVector))
+	copy(tmp, haveVector)
+
 	ret := make(map[string]interface{})
 	ret["maxUploadSize"] = 2147483647 // 2GB.. *shrug* :p
-	ret["alreadyHave"] = haveVector
+	ret["alreadyHave"] = tmp
 	ret["uploadUrl"] = "http://localhost:3179/camli/upload"
 	ret["uploadUrlExpirationSeconds"] = 86400
 	returnJSON(conn, ret)
@@ -299,6 +326,13 @@ func handlePreUpload(conn http.ResponseWriter, req *http.Request) {
 func handleMultiPartUpload(conn http.ResponseWriter, req *http.Request) {
 	if !(req.Method == "POST" && req.URL.Path == "/camli/upload") {
 		badRequestError(conn, "In-configured handler.")
+	}
+
+	if !putAllowed(req) {
+		conn.Header().Set("WWW-Authenticate", "Basic realm=\"camlistored\"")
+		conn.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprintf(conn, "Authentication required.\n")
+		return
 	}
 
 	multipart, err := req.MultipartReader()
@@ -417,14 +451,18 @@ func handlePut(conn http.ResponseWriter, req *http.Request) {
 
 // HandleRoot ...
 func HandleRoot(conn http.ResponseWriter, req *http.Request) {
-	_, _ = fmt.Fprintf(conn, `This is camlistored, a Camlistore storage daemon`)
+	if *stealthMode {
+		_, _ = fmt.Fprintf(conn, "Hi.\n")
+	} else {
+		_, _ = fmt.Fprintf(conn, `This is camlistored, a Camlistore storage daemon`)
+	}
 }
 
 func main() {
 	flag.Parse()
 
-	putPassword = os.Getenv("CAMLI_PASSWORD")
-	if len(putPassword) == 0 {
+	accessPassword = os.Getenv("CAMLI_PASSWORD")
+	if len(accessPassword) == 0 {
 		_, _ = fmt.Fprintf(os.Stderr, "No CAMLI_PASSWORD environment variable set. \n")
 		os.Exit(1)
 	}

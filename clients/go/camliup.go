@@ -35,7 +35,7 @@ func (a *Agent) Upload(h *UploadHandler) {
 	fmt.Println("Need to upload: ", h, "to", url)
 
 	errorMessage := func(msg string, e error) {
-		_, _ = fmt.Fprintf(os.Stderr, "%s on %v: %v\n", msg, h.blobRef, e)
+		_, _ = fmt.Fprintf(os.Stderr, "[ERROR] %s on %v: %v\n", msg, h.blobRef, e)
 		return
 	}
 
@@ -78,17 +78,17 @@ func (a *Agent) Upload(h *UploadHandler) {
 	}
 	fmt.Println("preupload done:", pur, alreadyHave)
 
-	boundary := "--sdf8sd8f7s9df9s7df9sd7sdf9s879vs7d8v7sd8v7sd8v"
+	boundary := "sdf8sd8f7s9df9s7df9sd7sdf9s879vs7d8v7sd8v7sd8v"
 	_, _ = h.contents.Seek(0, 0)
 	resp, err = http.Post(uploadUrl,
-		"mutipart/form-data; boundary="+boundary,
+		"multipart/form-data; boundary="+boundary,
 		io.MultiReader(
 			strings.NewReader(fmt.Sprintf(
-				"%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n",
+				"--%s\r\nContent-Disposition: form-data; name=\"%s\"\r\n\r\n",
 				boundary,
 				h.blobRef)),
 			h.contents,
-			strings.NewReader("\r\n"+boundary+"--\r\n")),
+			strings.NewReader("\r\n--"+boundary+"--\r\n")),
 	)
 	if err != nil {
 		errorMessage("camli upload error", err)
@@ -103,13 +103,13 @@ func (a *Agent) Wait() int {
 	return 0
 }
 
-func blobName(contents io.ReadSeeker) (name string, err error) {
+func blobName(contents io.ReadSeeker) (string, error) {
 	s1 := sha1.New()
 	if _, err := contents.Seek(0, 0); err != nil {
-		return
+		return "", err
 	}
 	if _, err := io.Copy(s1, contents); err != nil {
-		return
+		return "", err
 	}
 	return fmt.Sprintf("sha1-%x", s1.Sum(nil)), nil
 }
