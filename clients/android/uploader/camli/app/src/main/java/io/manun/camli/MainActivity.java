@@ -1,6 +1,8 @@
 package io.manun.camli;
 
+import android.content.ContentResolver;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -9,12 +11,22 @@ import com.google.android.material.snackbar.Snackbar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 
+import android.os.ParcelFileDescriptor;
+import android.util.Log;
 import android.view.View;
 
 import android.view.Menu;
 import android.view.MenuItem;
 
+import java.io.FileDescriptor;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.net.URI;
+
 public class MainActivity extends AppCompatActivity {
+
+    private static final String TAG = MainActivity.class.getName();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -31,6 +43,62 @@ public class MainActivity extends AppCompatActivity {
                         .setAction("Action", null).show();
             }
         });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        Intent intent = getIntent();
+        String action = intent.getAction();
+        Log.d(TAG, "onResume; action=" + action);
+        if (Intent.ACTION_SEND.equals(action)) {
+            handleSend(intent);
+        } else if (Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+            handleSendMultiple(intent);
+        }
+    }
+
+    private void handleSendMultiple(Intent intent) {
+//        TODO:
+    }
+
+    private void handleSend(Intent intent) {
+        Bundle extras = intent.getExtras();
+        if (extras == null) {
+            Log.w(TAG, "expected extras in handleSend");
+            return;
+        }
+        extras.keySet(); // unparcel
+        Log.d(TAG, "handleSend; extras=" + extras);
+
+        Object streamValue = extras.get("android.intent.extra.STREAM");
+        if (!(streamValue instanceof Uri)) {
+            Log.w(TAG, "Expected URI for STREAM; got: " + streamValue);
+            return;
+        }
+
+        Uri uri = (Uri) streamValue;
+        startDownloadOfUri(uri);
+    }
+
+    private void startDownloadOfUri(Uri uri) {
+        Log.d(TAG, "startDownloadOf: " + uri);
+        ContentResolver cr = getContentResolver();
+        ParcelFileDescriptor pfd = null;
+        try {
+            pfd = cr.openFileDescriptor(uri, "r");
+        } catch (FileNotFoundException e) {
+            Log.d(TAG, "startDownloadOf: " + uri);
+            return;
+        }
+        Log.d(TAG, "opened parcel fd = " + pfd);
+        FileDescriptor fd = pfd.getFileDescriptor();
+        FileInputStream fis = new FileInputStream(fd);
+        try {
+            pfd.close();
+        } catch (IOException e) {
+            Log.w(TAG, "error closing fd", e);
+        }
     }
 
     @Override
