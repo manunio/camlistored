@@ -1,0 +1,13 @@
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+    <EditTextPreference
+        app:key="camli.host"
+        app:persistent="true"
+        app:summary="@string/settings_host_summary"
+        app:title="@string/settings_host_title" />
+
+    <EditTextPreference
+        app:key="camli.password"
+        app:persistent="true"
+        app:title="@string/settings_password_title"
+        />
+</PreferenceScreen>
