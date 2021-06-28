@@ -29,12 +29,15 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = MainActivity.class.getName();
 
     private IUploadService serviceStub = null;
+
+    private final ArrayList<Uri> pendingUrisToUpload = new ArrayList<>();
 
     private final IStatusCallback.Stub statusCallback = new IStatusCallback.Stub() {
         @Override
@@ -55,6 +58,11 @@ public class MainActivity extends AppCompatActivity {
             Log.d(TAG, "Service connected");
             try {
                 serviceStub.registerCallback(statusCallback);
+                // Drain the queue from before the service was connected.
+                for (Uri uri : pendingUrisToUpload) {
+                    startDownloadOfUri(uri);
+                }
+                pendingUrisToUpload.clear();
             } catch (RemoteException e) {
                 e.printStackTrace();
             }
@@ -141,7 +149,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void startDownloadOfUri(Uri uri) {
         if (serviceStub == null) {
-            Log.d(TAG, "serviceStub is null in startDownloadOfUri");
+            Log.d(TAG, "serviceStub is null in startDownloadOfUri, enqueuing");
+            pendingUrisToUpload.add(uri);
             return;
         }
         Log.d(TAG, "startDownloadOf: " + uri);
