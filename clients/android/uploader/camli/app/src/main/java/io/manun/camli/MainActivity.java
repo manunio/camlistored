@@ -13,6 +13,7 @@ import com.google.android.material.snackbar.Snackbar;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
+import androidx.core.app.NavUtils;
 
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
@@ -185,11 +186,6 @@ public class MainActivity extends AppCompatActivity {
             SettingsActivity.show(this);
             return true;
         }
-//        if (id == android.R.id.home) {
-//            finish();
-//            return true;
-//        }
-
 
         return super.onOptionsItemSelected(item);
     }

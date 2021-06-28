@@ -45,15 +45,6 @@ public class SettingsActivity extends AppCompatActivity {
             setPreferencesFromResource(R.xml.root_preferences, rootKey);
             hostPref = findPreference(Preferences.HOST);
             passwordPref = findPreference(Preferences.PASSWORD);
-//
-//            requireActivity().
-//                    getOnBackPressedDispatcher()
-//                    .addCallback(this, new OnBackPressedCallback(true) {
-//                        @Override
-//                        public void handleOnBackPressed() {
-//                            requireActivity().onBackPressed();
-//                        }
-//                    });
 
             if (passwordPref != null) {
                 passwordPref.setOnBindEditTextListener(editText ->
