@@ -15,6 +15,8 @@ import org.apache.http.impl.DefaultHttpRequestFactory;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.DefaultHttpClient;
 import org.apache.http.message.BasicNameValuePair;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -76,12 +78,15 @@ public class UploadThread extends Thread {
             Log.d(TAG, "response: " + res);
             Log.d(TAG, "response code: " + res.getStatusLine());
             Log.d(TAG, "entity: " + res.getEntity());
-        } catch (ClientProtocolException e) {
-            Log.e(TAG, "preupload error", e);
-            return;
+
+            String jsonSlurp = Util.slurp(res.getEntity().getContent());
+            Log.d(TAG, "JSON content: " + jsonSlurp);
+            JSONObject json = new JSONObject(jsonSlurp);
+            Log.d(TAG, "JSON response: " + json);
         } catch (IOException e) {
             Log.e(TAG, "preupload error", e);
-            return;
+        } catch (JSONException e) {
+            Log.e(TAG, "JSON parse error", e);
         }
     }
 }
