@@ -17,6 +17,7 @@ import org.apache.http.client.methods.HttpPost;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -25,19 +26,29 @@ public class UploadService extends Service {
 
     private static final String TAG = UploadService.class.getName();
 
+    // Guarded by 'this':
+    private boolean mUploading = false;
+    private UploadThread mUploadThread = null;
+    private final Set<QueuedFile> mQueueSet = new HashSet<>();
+    private final List<QueuedFile> mQueueList = new ArrayList<>();
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
         return service;
     }
 
+    // Called by UploadThread to get stuff to do, Caller owns returned list.
+    List<QueuedFile> uploadQueue() {
+        synchronized (this) {
+            if (mQueueList.isEmpty()) {
+                return Collections.emptyList();
+            }
+            return new ArrayList<>(mQueueList);
+        }
+    }
+
     private final IUploadService.Stub service = new IUploadService.Stub() {
-
-        private boolean mUploading = false;
-        private UploadThread mUploadThread = null;
-        private final Set<QueuedFile> mQueueSet = new HashSet<>();
-        private final List<QueuedFile> mQueueList = new ArrayList<>();
-
         @Override
         public boolean enqueueUpload(Uri uri) throws RemoteException {
             SharedPreferences sp = getSharedPreferences(Preferences.NAME, 0);
@@ -60,7 +71,7 @@ public class UploadService extends Service {
             Log.d(TAG, "size of file is: " + pfd.getStatSize());
             QueuedFile qf = new QueuedFile(sha1, uri);
 
-            synchronized (this) {
+            synchronized (UploadService.this) {
                 if (mQueueSet.contains(qf)) {
                     return false;
                 }
@@ -85,21 +96,21 @@ public class UploadService extends Service {
 
         @Override
         public int queueSize() throws RemoteException {
-            synchronized (this) {
+            synchronized (UploadService.this) {
                 return mQueueList.size();
             }
         }
 
         @Override
         public boolean isUploading() throws RemoteException {
-            synchronized (this) {
+            synchronized (UploadService.this) {
                 return mUploading;
             }
         }
 
         @Override
         public boolean pause() throws RemoteException {
-            synchronized (this) {
+            synchronized (UploadService.this) {
                 if (mUploadThread != null) {
                     mUploadThread.stopPlease();
                     return true;
@@ -110,7 +121,7 @@ public class UploadService extends Service {
 
         @Override
         public boolean resume() throws RemoteException {
-            synchronized (this) {
+            synchronized (UploadService.this) {
                 if (mUploadThread != null) {
                     return false;
                 }
@@ -121,7 +132,7 @@ public class UploadService extends Service {
                     return false;
                 }
                 String password = sp.getString(Preferences.PASSWORD, "");
-                mUploadThread = new UploadThread(hp, password);
+                mUploadThread = new UploadThread(UploadService.this, hp, password);
                 mUploadThread.start();
                 return true;
             }

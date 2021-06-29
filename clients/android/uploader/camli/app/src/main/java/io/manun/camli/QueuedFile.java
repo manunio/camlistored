@@ -4,6 +4,11 @@ import android.net.Uri;
 
 import java.util.Objects;
 
+
+/*
+ * Immutable tuple of content name sha1 & URI to upload.
+ */
+
 public class QueuedFile {
     private final String mContentName;
     private final Uri mUri;
