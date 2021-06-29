@@ -6,6 +6,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Bundle;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
@@ -15,7 +16,9 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.core.app.NavUtils;
 
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
 import android.util.Log;
@@ -30,6 +33,9 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -147,34 +153,34 @@ public class MainActivity extends AppCompatActivity {
         startDownloadOfUri(uri);
     }
 
-    private void startDownloadOfUri(Uri uri) {
+    private void startDownloadOfUri(final Uri uri) {
         if (serviceStub == null) {
             Log.d(TAG, "serviceStub is null in startDownloadOfUri, enqueuing");
             pendingUrisToUpload.add(uri);
             return;
         }
-        Log.d(TAG, "startDownloadOf: " + uri);
-        ContentResolver cr = getContentResolver();
-        ParcelFileDescriptor pfd = null;
-        try {
-            pfd = cr.openFileDescriptor(uri, "r");
-        } catch (FileNotFoundException e) {
-            Log.d(TAG, "startDownloadOf: " + uri);
-            return;
-        }
-        Log.d(TAG, "opened parcel fd = " + pfd);
-        try {
-            serviceStub.addFile(pfd);
-        } catch (RemoteException e) {
-            Log.d(TAG, "failure to enqueue upload", e);
-        }
-        FileDescriptor fd = pfd.getFileDescriptor();
-        FileInputStream fis = new FileInputStream(fd);
-        try {
-            pfd.close();
-        } catch (IOException e) {
-            Log.w(TAG, "error closing fd", e);
-        }
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        Handler handler = new Handler(Looper.getMainLooper()); // only parameter-less constructor is deprecated.
+        executor.execute(new Runnable() {
+            @Override
+            public void run() {
+                // Background work here.
+                try {
+                    serviceStub.enqueueUpload(uri);
+                } catch (RemoteException e) {
+                    Log.d(TAG, "failure to enqueue upload", e);
+                }
+
+                handler.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        // UI thread work here.
+                        Log.d(TAG, "UI thread");
+                    }
+                });
+            }
+        });
     }
 
     @Override
