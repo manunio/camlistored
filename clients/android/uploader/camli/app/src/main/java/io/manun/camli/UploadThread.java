@@ -43,7 +43,7 @@ public class UploadThread extends Thread {
         this.mPassword = mPassword;
     }
 
-    private void stopPlease() {
+    public void stopPlease() {
         mStopRequested.set(false);
     }
 
@@ -83,6 +83,9 @@ public class UploadThread extends Thread {
             Log.d(TAG, "JSON content: " + jsonSlurp);
             JSONObject json = new JSONObject(jsonSlurp);
             Log.d(TAG, "JSON response: " + json);
+            String uploadUrl = json.optString("uploadUrl", "http://" +
+                    mHostPort + "/camli/upload");
+            Log.d(TAG, "UploadUrl is: " + uploadUrl);
         } catch (IOException e) {
             Log.e(TAG, "preupload error", e);
         } catch (JSONException e) {
