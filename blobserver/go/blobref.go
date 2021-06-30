@@ -23,10 +23,7 @@ var expectedDigestSize = map[string]int{
 
 func blobIfValid(hashName, digest string) *BlobRef {
 	expectedSize := expectedDigestSize[hashName]
-	if expectedSize == 0 {
-		return nil
-	}
-	if expectedSize != 0 && len(digest) != expectedSize {
+	if expectedSize == 0 || len(digest) != expectedSize {
 		return nil
 	}
 	return &BlobRef{hashName, digest}
