@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -39,12 +40,9 @@ public class UploadService extends Service {
     }
 
     // Called by UploadThread to get stuff to do, Caller owns returned list.
-    List<QueuedFile> uploadQueue() {
+    LinkedList<QueuedFile> uploadQueue() {
         synchronized (this) {
-            if (mQueueList.isEmpty()) {
-                return Collections.emptyList();
-            }
-            return new ArrayList<>(mQueueList);
+            return new LinkedList<>(mQueueList);
         }
     }
 
@@ -56,13 +54,8 @@ public class UploadService extends Service {
 
             if (!hp.isValid()) return false;
 
-            ContentResolver cr = getContentResolver();
-            ParcelFileDescriptor pfd = null;
-
-            try {
-                pfd = cr.openFileDescriptor(uri, "r");
-            } catch (FileNotFoundException e) {
-                Log.w(TAG, "FileNotFound for " + uri, e);
+            ParcelFileDescriptor pfd = getFileDescriptor(uri);
+            if (pfd == null) {
                 return false;
             }
 
@@ -138,4 +131,14 @@ public class UploadService extends Service {
             }
         }
     };
+
+    public ParcelFileDescriptor getFileDescriptor(Uri uri) {
+        ContentResolver cr = getContentResolver();
+        try {
+            return cr.openFileDescriptor(uri, "r");
+        } catch (FileNotFoundException e) {
+            Log.e(TAG, "getFileDescriptor: FileNotFound for" + uri, e);
+            return null;
+        }
+    }
 }
