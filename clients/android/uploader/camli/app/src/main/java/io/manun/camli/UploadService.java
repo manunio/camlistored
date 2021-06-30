@@ -31,7 +31,7 @@ public class UploadService extends Service {
     private boolean mUploading = false;
     private UploadThread mUploadThread = null;
     private final Set<QueuedFile> mQueueSet = new HashSet<>();
-    private final List<QueuedFile> mQueueList = new ArrayList<>();
+    private final LinkedList<QueuedFile> mQueueList = new LinkedList<>();
 
     @Nullable
     @Override
@@ -43,6 +43,23 @@ public class UploadService extends Service {
     LinkedList<QueuedFile> uploadQueue() {
         synchronized (this) {
             return new LinkedList<>(mQueueList);
+        }
+    }
+
+    void onUploadThreadEnding() {
+        synchronized (this) {
+            mUploadThread = null;
+            mUploading = false;
+        }
+    }
+
+    void onUploadComplete(QueuedFile qf) {
+        synchronized (this) {
+            boolean removedSet = mQueueSet.remove(qf);
+            boolean removedList = mQueueList.remove(qf); //TODO: ghetto, linter
+            // scan
+            Log.d(TAG, "onUploadComplete: removing of" + qf + "; removedSet="
+                    + removedSet + "; removedList=" + removedList);
         }
     }
 

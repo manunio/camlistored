@@ -1,12 +1,14 @@
 package io.manun.camli;
 
 import android.os.ParcelFileDescriptor;
+import android.os.SystemClock;
 import android.util.Log;
 
 import org.apache.http.Header;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpRequestFactory;
 import org.apache.http.HttpResponse;
+import org.apache.http.StatusLine;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.ClientProtocolException;
@@ -45,7 +47,7 @@ public class UploadThread extends Thread {
 
     private final UploadService mService;
     private final HostPort mHostPort;
-    private final LinkedList<QueuedFile> mQueue;
+    private LinkedList<QueuedFile> mQueue;
 
     private final AtomicBoolean mStopRequested = new AtomicBoolean(false);
 
@@ -72,12 +74,63 @@ public class UploadThread extends Thread {
             return;
         Log.d(TAG, "Running UploadThread for " + mHostPort);
 
-        if (mQueue.isEmpty()) {
-            Log.d(TAG, "Queue empty; done");
-            return;
-        }
+        while (!(mQueue = mService.uploadQueue()).isEmpty()) {
+            Log.d(TAG, "run: Starting pre-upload of" + mQueue.size() + "files.");
+            JSONObject preUpload = doPreUpload();
+            if (preUpload == null) {
+                Log.w(TAG, "run: Preupload failed. ending UploadThread.");
+                mService.onUploadThreadEnding();
+                return;
+            }
 
-        // DO the pre-upload
+            Log.d(TAG, "run: Starting upload of" + mQueue.size() + "files.");
+            if (!doUpload(preUpload)) {
+                Log.w(TAG, "run: Upload failed, ending UploadThread.");
+                mService.onUploadThreadEnding();
+                return;
+            }
+            Log.d(TAG, "run: Did upload. Queue size is now " + mQueue.size() + "files.");
+        }
+        Log.d(TAG, "run: Queue empty; done.");
+        mService.onUploadThreadEnding();
+    }
+
+    private boolean doUpload(JSONObject preUpload) {
+        Log.d(TAG, "JSON: " + preUpload);
+        String uploadUrl = preUpload
+                .optString("uploadUrl", "http://" + mHostPort + "/camli/upload");
+        Log.d(TAG, "uploadURL is: " + uploadUrl);
+        HttpPost uploadReq = new HttpPost(uploadUrl);
+        MultipartEntity entity = new MultipartEntity();
+        uploadReq.setEntity(entity);
+        HttpResponse uploadRes = null;
+        try {
+            uploadRes = mUA.execute(uploadReq);
+        } catch (IOException e) {
+            Log.e(TAG, "run: upload error", e);
+            return false;
+        }
+        Log.d(TAG, "doUpload: response: " + uploadRes);
+        StatusLine statusLine = uploadRes.getStatusLine();
+        Log.d(TAG, "doUpload: response code: " + statusLine);
+        // TODO: check response body, once response body is defined?
+        if (statusLine == null || statusLine.getStatusCode() < 200 ||
+                statusLine.getStatusCode() > 299) {
+            Log.d(TAG, "doUpload: upload error.");
+            // TODO: back-off? or probably in the service layer.
+            return false;
+        }
+        for (QueuedFile qf : entity.getFilesWritten()) {
+            // TODO: only do this if acknowledge in JSON response?
+            Log.d(TAG, "doUpload: upload complete for: " + qf);
+            mService.onUploadComplete(qf);
+        }
+        Log.d(TAG, "doUpload: returning true.");
+        return true;
+    }
+
+    private JSONObject doPreUpload() {
+        // Do the pre-upload
         HttpPost preReq = new HttpPost("http://" + mHostPort +
                 "/camli/preupload");
 
@@ -93,7 +146,7 @@ public class UploadThread extends Thread {
             preReq.setEntity(new UrlEncodedFormEntity(uploadKeys));
         } catch (UnsupportedEncodingException e) {
             Log.e(TAG, "error", e);
-            return;
+            return null;
         }
         JSONObject preUpload = null;
         String jsonSlurp = null;
@@ -106,30 +159,17 @@ public class UploadThread extends Thread {
             preUpload = new JSONObject(jsonSlurp);
         } catch (IOException e) {
             Log.e(TAG, "preupload error", e);
-            return;
+            return null;
         } catch (JSONException e) {
             Log.e(TAG, "preupload JSON parse error from: " + jsonSlurp, e);
-            return;
+            return null;
         }
-
-        Log.d(TAG, "JSON: " + preUpload);
-        String uploadUrl = preUpload
-                .optString("uploadUrl", "http://" + mHostPort + "/camli/upload");
-        Log.d(TAG, "uploadURL is: " + uploadUrl);
-        HttpPost uploadReq = new HttpPost(uploadUrl);
-        uploadReq.setEntity(new MultipartEntity());
-        HttpResponse uploadRes = null;
-        try {
-            uploadRes = mUA.execute(uploadReq);
-            Log.d(TAG, "run: response: " + uploadRes);
-            Log.d(TAG, "run: response code: " + uploadRes.getStatusLine());
-        } catch (IOException e) {
-            Log.e(TAG, "run: upload error", e);
-        }
-
+        return preUpload;
     }
 
     private class MultipartEntity implements HttpEntity {
+
+        private final List<QueuedFile> mFilesWritten = new ArrayList<>();
 
         private boolean mDone = false;
         private final String mBoundary;
@@ -197,8 +237,10 @@ public class UploadThread extends Thread {
             PrintWriter pw = new PrintWriter(bos);
             byte[] buf = new byte[1024];
 
-            while (!mStopRequested.get() && !mQueue.isEmpty()) {
-                QueuedFile qf = mQueue.getFirst();
+            int bytesWritten = 0;
+            long timeStarted = SystemClock.uptimeMillis();
+
+            for (QueuedFile qf : mQueue) {
                 ParcelFileDescriptor pfd = mService.getFileDescriptor(qf.getUri());
                 if (pfd == null) {
                     // TODO: report some errors up to user?
@@ -226,10 +268,19 @@ public class UploadThread extends Thread {
                 pfd.close();
                 mQueue.removeFirst();
                 // TODO: notification of update
+                Log.d(TAG, "writeTo: write of " + qf.getContentName() + " complete.");
+                mFilesWritten.add(qf);
+
+                if (bytesWritten > 1024 * 1024) {
+                    Log.d(TAG, "writeTo: enough bytes written, stopping writing after " + bytesWritten);
+                    // stop after 1MB to get response.
+                    // TODO: make this smarter, configurable, time-based.
+                    break;
+                }
             }
             endBoundary(pw);
             pw.flush();
-            Log.d(TAG, "writeTo: upload complete");
+            Log.d(TAG, "writeTo: finished writing upload MIME body.");
         }
 
         private void startNewBoundary(PrintWriter pw) {
@@ -242,6 +293,10 @@ public class UploadThread extends Thread {
             pw.print("\r\n--");
             pw.print(mBoundary);
             pw.print("--\r\n");
+        }
+
+        public List<QueuedFile> getFilesWritten() {
+            return mFilesWritten;
         }
     }
 

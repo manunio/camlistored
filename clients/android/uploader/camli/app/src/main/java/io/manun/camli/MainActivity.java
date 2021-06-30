@@ -20,6 +20,7 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.os.ParcelFileDescriptor;
+import android.os.Parcelable;
 import android.os.RemoteException;
 import android.util.Log;
 import android.view.View;
@@ -131,7 +132,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void handleSendMultiple(Intent intent) {
-//        TODO:
+        ArrayList<Parcelable> items = intent.
+                getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+        for (Parcelable p : items) {
+            if (!(p instanceof Uri)) {
+                Log.d(TAG, "handleSendMultiple: unknown thing" + p);
+                continue;
+            }
+            startDownloadOfUri((Uri) p);
+        }
     }
 
     private void handleSend(Intent intent) {
@@ -154,6 +163,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void startDownloadOfUri(final Uri uri) {
+        Log.d(TAG, "startDownloadOfUri: " + uri);
         if (serviceStub == null) {
             Log.d(TAG, "serviceStub is null in startDownloadOfUri, enqueuing");
             pendingUrisToUpload.add(uri);

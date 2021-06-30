@@ -46,4 +46,12 @@ public class QueuedFile {
     public int hashCode() {
         return Objects.hash(mContentName, mUri);
     }
+
+    @Override
+    public String toString() {
+        return "QueuedFile{" +
+                "mContentName='" + mContentName + '\'' +
+                ", mUri=" + mUri +
+                '}';
+    }
 }
