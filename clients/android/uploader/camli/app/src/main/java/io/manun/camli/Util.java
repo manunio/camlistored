@@ -55,7 +55,7 @@ public class Util {
         return hex.toString();
     }
 
-    private static String converToHex(byte[] data) {
+    private static String convertToHex(byte[] data) {
         if (data == null) {
             return null;
         }
