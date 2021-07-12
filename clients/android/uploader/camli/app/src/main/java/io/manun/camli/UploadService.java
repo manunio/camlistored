@@ -5,6 +5,7 @@ import android.content.ContentResolver;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
+import android.os.Binder;
 import android.os.IBinder;
 import android.os.ParcelFileDescriptor;
 import android.os.RemoteException;
@@ -32,6 +33,13 @@ public class UploadService extends Service {
     private UploadThread mUploadThread = null;
     private final Set<QueuedFile> mQueueSet = new HashSet<>();
     private final LinkedList<QueuedFile> mQueueList = new LinkedList<>();
+
+
+    public class UploadBinder extends Binder {
+        UploadService getService() {
+            return UploadService.this;
+        }
+    }
 
     @Nullable
     @Override
